@@ -1,3 +1,5 @@
+# Don't use this repository, it's just to add scripts that I use in a GUI application Called Op25MCH https://github.com/SarahRoseLives/OP25MCH
+
 # This is the boatbod fork of op25.  
 
 Capabilities are broadly categorized into two lists - those supported by the legacy `rx.py` version of the app and those by the newer `multi_rx.py` version.  I recommend using `multi_rx.py` where at all possible as this is the focus of future development.
