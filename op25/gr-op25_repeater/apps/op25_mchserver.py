@@ -1,140 +1,177 @@
-# !/usr/bin/python
+#!/usr/bin/python
 
-from flask import Flask, request, jsonify
+import socket
+import threading
 import subprocess
 import csv
 import re
 
-app = Flask(__name__)
+# Requires screen to be installed on host
+# Install and run script from op25 apps folder
 session_name = 'OP25_SESSION'
+
+
+def read_trunk():
+    trunkfile = 'trunk.tsv'
+    print(f"Opening file: {trunkfile}")  # Debug statement
+
+    data = []  # List to store all rows as dictionaries
+
+    with open(trunkfile, 'r') as f:
+        reader = csv.DictReader(f, delimiter='\t')
+        for row in reader:
+            sysname = row.get('Sysname', 'N/A')
+            control_channel_list = row.get('Control Channel List', 'N/A')
+            offset = row.get('Offset', 'N/A')
+            nac = row.get('NAC', 'N/A')
+            modulation = row.get('Modulation', 'N/A')
+            tgid_tags_file = row.get('TGID Tags File', 'N/A')
+            whitelist = row.get('Whitelist', 'N/A')
+            blacklist = row.get('Blacklist', 'N/A')
+            center_frequency = row.get('Center Frequency', 'N/A')
+
+            # Create a dictionary for the current row
+            row_data = {
+                'sysname': sysname,
+                'cclist': control_channel_list,
+                'offset': offset,
+                'nac': nac,
+                'modulation': modulation,
+                'tglist': tgid_tags_file,
+                'whitelist': whitelist,
+                'blacklist': blacklist,
+                'centerfrequency': center_frequency
+            }
+
+            # Add the dictionary to the list
+            data.append(row_data)
+
+    return data
+
+
+def write_trunk(**kwargs):
+    trunkfile = 'trunk.tsv'
+    print(f"Writing to file: {trunkfile}")  # Debug statement
+
+    # Define the field names
+    fieldnames = ['Sysname', 'Control Channel List', 'Offset', 'NAC', 'Modulation', 'TGID Tags File', 'Whitelist',
+                  'Blacklist', 'Center Frequency']
+
+    # Prepare the row with default values
+    row_data = {
+        'Sysname': f'"{kwargs.get("sysname", "N/A")}"',
+        'Control Channel List': f'"{kwargs.get("cclist", "N/A")}"',
+        'Offset': f'"{kwargs.get("offset", "0")}"',
+        'NAC': f'"{kwargs.get("nac", "0")}"',
+        'Modulation': f'"{kwargs.get("modulation", "cqpsk")}"',
+        'TGID Tags File': f'"{kwargs.get("tglist", "")}"',
+        'Whitelist': '""',
+        'Blacklist': '""',
+        'Center Frequency': '""'
+    }
+
+    # Open the file for writing
+    with open(trunkfile, 'w', newline='') as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames, delimiter='\t', quoting=csv.QUOTE_NONNUMERIC)
+
+        # Write the header
+        writer.writeheader()
+
+        # Write the row
+        writer.writerow({key: value.strip('"') for key, value in row_data.items()})
 
 
 def kill_session():
     subprocess.Popen(f"screen -S {session_name} -X quit", shell=True)
 
 
-def read_trunk_file(file_path):
-    with open(file_path, mode='r', newline='') as file:
-        reader = csv.DictReader(file, delimiter='\t', quoting=csv.QUOTE_ALL)
-        data = [row for row in reader]
-    return data
+def handle_client(client_socket):
+    with client_socket:
+        print(f"Connection from {client_socket.getpeername()} has been established.")
+        while True:
+            try:
+                command = client_socket.recv(1024).decode()
+                if not command:
+                    break
 
+                print(f"Received command: {command}")
 
-def modify_trunk_file(data, updates):
-    for key, value in updates.items():
-        if key in data[0]:
-            data[0][key] = value
-    return data
-
-
-def save_trunk_file(data, file_path):
-    with open(file_path, mode='w', newline='') as file:
-        fieldnames = data[0].keys()
-        writer = csv.DictWriter(file, fieldnames=fieldnames, delimiter='\t', quoting=csv.QUOTE_ALL)
-        writer.writeheader()
-        writer.writerows(data)
-
-
-def parse_write_config(data_str):
-    updates = {}
-    # Use regex to correctly split key-value pairs
-    matches = re.findall(r'([^:]+?):\s*([^:]+?(?=\s+\w+:|$))', data_str)
-    for key, value in matches:
-        updates[key.strip()] = value.strip()
-    return updates
-
-
-@app.route('/hello', methods=['GET'])
-def hello():
-    return jsonify({"response": "ACK: HELLO"})
-
-
-@app.route('/start_test', methods=['POST'])
-def start_test():
-    try:
-        op25_cmd = f"./rx.py --args 'rtl' -N 'LNA:47' -S 2500000 -x 2 -T trunk.tsv -U -X -l http:0.0.0.0:8080"
-        kill_session()
-        subprocess.Popen(f"screen -dmS {session_name} {op25_cmd}", shell=True)
-        return jsonify({"response": "ACK: OP25 started"})
-    except Exception as e:
-        return jsonify({"response": f"NACK: Error starting OP25 - {str(e)}"})
-
-
-@app.route('/stop_op25', methods=['POST'])
-def stop_op25():
-    try:
-        kill_session()
-        return jsonify({"response": "ACK: OP25 stopped"})
-    except Exception as e:
-        return jsonify({"response": f"NACK: Error stopping OP25 - {str(e)}"})
-
-
-@app.route('/get_output', methods=['GET'])
-def get_output():
-    try:
-        output = subprocess.check_output(
-            f"screen -S {session_name} -X hardcopy -h /tmp/screenlog.0 && cat /tmp/screenlog.0", shell=True)
-        return jsonify({"response": output.decode('utf-8')})
-    except Exception as e:
-        return jsonify({"response": f"NACK: Error getting output - {str(e)}"})
-
-
-@app.route('/get_config', methods=['GET'])
-def get_config():
-    try:
-        file_path = 'trunk.tsv'
-        data = read_trunk_file(file_path)
-        if data:
-            config = data[0]
-            control_channel_list = config.get('Control Channel List', '')
-            sysname = config.get('Sysname', '')
-            talkgroup_list_name = config.get('TGID Tags File', '')
-            response = f"Control Channel List: {control_channel_list} Sysname: {sysname} Talkgroup List Name: {talkgroup_list_name}"
-            return jsonify({"response": response})
-        else:
-            return jsonify({"response": "NACK: No data found in trunk.tsv"})
-    except Exception as e:
-        return jsonify({"response": f"NACK: Error reading config - {str(e)}"})
-
-
-import logging
+                if command == 'HELLO':
+                    response = "ACK: HELLO"
+                elif command == 'START_TEST':
+                    op25_cmd = f"./rx.py --args 'rtl' -N 'LNA:47' -S 2500000 -x 2 -T trunk.tsv -U -X -l http:0.0.0.0:8080"
+                    # Kill any existing session
+                    kill_session()
+                    # Run it in a screen session
+                    subprocess.Popen(f"screen -dmS {session_name} {op25_cmd}", shell=True)
+                    response = "ACK: OP25 started"
+                elif command == 'STOP_OP25':
+                    # Kill the screen session
+                    kill_session()
+                    response = "ACK: OP25 stopped"
+                elif command == 'GET_OUTPUT':
+                    # Capture and return the output of the screen session
+                    output = subprocess.check_output(
+                        f"screen -S {session_name} -X hardcopy -h /tmp/screenlog.0 && cat /tmp/screenlog.0", shell=True)
+                    response = output.decode('utf-8')
 
 
 
-@app.route('/write_config', methods=['POST'])
-def write_config():
-    logging.info("Received request to write config")
-    try:
-        data = request.get_json()  # Get JSON data from the request
-
-        if data:
-            logging.debug(f"Received JSON data: {data}")
-            # Extract updates from the JSON data
-            cc_list = data.get('Control_Channel_List', '')
-            sysname = data.get('Sysname', '')
-            tglist = data.get('Talkgroup_List_Name', '')
-
-            file_path = 'trunk.tsv'
-            data = read_trunk_file(file_path)
-            if data:
-                # Modify trunk file with the updates
-                updates = {'Control Channel List': cc_list, 'Sysname': sysname, 'TGID Tags File': tglist}
-                data = modify_trunk_file(data, updates)
-                save_trunk_file(data, file_path)
-                logging.info("Config updated successfully")
-                return jsonify({"response": "ACK: Config updated"})
-            else:
-                logging.warning("No data found in trunk.tsv")
-                return jsonify({"response": "NACK: No data found in trunk.tsv"})
-        else:
-            logging.warning("No JSON data received")
-            return jsonify({"response": "NACK: No JSON data received"})
-    except Exception as e:
-        logging.error(f"Error updating config - {str(e)}")
-        return jsonify({"response": f"NACK: Error updating config - {str(e)}"})
+                elif command == 'READ_TRUNK':
+                    try:
+                        trunk_data = read_trunk()
+                        sysname = [entry['sysname'] for entry in trunk_data][0]
+                        cclist = [entry['cclist'] for entry in trunk_data][0]
+                        tglist = [entry['tglist'] for entry in trunk_data][0]
 
 
 
+                        response = f"sysname={sysname};cclist={cclist};tglist={tglist}"
+                        print(response)  # Print for debug purposes
 
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=8081)
+                    except Exception as e:
+                        response = f"NACK: Error reading config - {str(e)}"
+                        print(response)  # Print for debug purposes
+
+
+                elif command.startswith('WRITE_TRUNK'):
+                    try:
+                        match = re.match(r'WRITE_TRUNK;sysname=(.*?);cclist=(.*?);tglist=(.*)', command)
+                        if match:
+                            sysname = match.group(1)
+                            cclist = match.group(2)
+                            tglist = match.group(3)
+                            print("sysname:", sysname)
+                            print("cclist:", cclist)
+                            print("tglist:", tglist)
+
+                            write_trunk(sysname=sysname, cclist=cclist, tglist=tglist)
+                            response = 'ACK'
+                    except Exception as e:
+                        response = f"NACK: Error updating trunk config - {str(e)}"
+
+                # Send the response back to the client
+                client_socket.send(response.encode('utf-8'))
+
+            except ConnectionResetError:
+                print("Client disconnected abruptly.")
+                break
+
+        print(f"Connection from {client_socket.getpeername()} has been closed.")
+
+
+def start_server(host='0.0.0.0', port=8081):
+    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)  # Set the SO_REUSEADDR option
+    server.bind((host, port))
+    server.listen(5)
+    print(f"Server listening on {host}:{port}")
+
+    while True:
+        client_socket, addr = server.accept()
+        client_handler = threading.Thread(target=handle_client, args=(client_socket,))
+        client_handler.start()
+
+
+if __name__ == "__main__":
+    start_server()
