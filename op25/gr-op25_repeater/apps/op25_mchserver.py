@@ -49,6 +49,8 @@ def read_trunk():
     return data
 
 
+
+
 def write_trunk(**kwargs):
     trunkfile = 'trunk.tsv'
     print(f"Writing to file: {trunkfile}")  # Debug statement
@@ -115,6 +117,10 @@ def handle_client(client_socket):
                         f"screen -S {session_name} -X hardcopy -h /tmp/screenlog.0 && cat /tmp/screenlog.0", shell=True)
                     response = output.decode('utf-8')
 
+                elif command == 'INCREASE_VOLUME':
+                    subprocess.Popen("amixer set PCM 200+", shell=True)
+                elif command == 'DECREASE_VOLUME':
+                    subprocess.Popen("amixer set PCM 200-", shell=True)
 
 
                 elif command == 'READ_TRUNK':
