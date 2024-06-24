@@ -6,6 +6,8 @@ import subprocess
 import csv
 import re
 
+from radioreference import GetSystems
+
 # Requires screen to be installed on host
 # Install and run script from op25 apps folder
 session_name = 'OP25_SESSION'
@@ -100,13 +102,43 @@ def handle_client(client_socket):
 
                 if command == 'HELLO':
                     response = "ACK: HELLO"
-                elif command == 'START_TEST':
-                    op25_cmd = f"./rx.py --args 'rtl' -N 'LNA:47' -S 2500000 -x 2 -T trunk.tsv -U -X -l http:0.0.0.0:8080"
+                elif command.startswith('MANUAL_START'):
+                    parts = command.split(';')
+
+                    # Extracted values
+                    sdr = parts[1]
+                    gain = parts[2]
+
+                    op25_cmd = f"./rx.py --args '{sdr}' -N 'LNA:{gain}' -S 2500000 -x 2 -T trunk.tsv -U -X -l http:0.0.0.0:8080"
+
                     # Kill any existing session
                     kill_session()
+
                     # Run it in a screen session
                     subprocess.Popen(f"screen -dmS {session_name} {op25_cmd}", shell=True)
+                    print(f"Started OP25 With: {op25_cmd}")
                     response = "ACK: OP25 started"
+
+                elif command.startswith('START_SYSTEM'):
+                    try:
+                        parts = command.split(';')
+
+                        # Extracted values
+                        site_id = parts[1]
+                        system_id = parts[2]
+
+                        op25_cmd = f"./rx.py --args 'rtl-sdr' -N 'LNA:48' -S 2500000 -x 2 -T systems/{system_id}/{system_id}_{site_id}_trunk.tsv -U -X -l http:0.0.0.0:8080"
+
+                        # Kill any existing session
+                        kill_session()
+
+                        # Run it in a screen session
+                        subprocess.Popen(f"screen -dmS {session_name} {op25_cmd}", shell=True)
+                        print(f"Started OP25 With: {op25_cmd}")
+                        response = "ACK: OP25 started"
+                    except:
+                        response = "ACK"
+
                 elif command == 'STOP_OP25':
                     # Kill the screen session
                     kill_session()
@@ -122,6 +154,18 @@ def handle_client(client_socket):
                 elif command == 'DECREASE_VOLUME':
                     subprocess.Popen("amixer set PCM 200-", shell=True)
 
+                elif command.startswith('CREATE_SYSTEM'):
+                    parts = command.split(';')
+
+                    username = parts[1]
+                    password = parts[2]
+                    system_id = parts[3]
+
+                    client = GetSystems(username=username, password=password)
+                    client.create_system_tsv_files(system_id)
+
+
+                    response = "ACK" # System created
 
                 elif command == 'READ_TRUNK':
                     try:
