@@ -109,7 +109,7 @@ def handle_client(client_socket):
                     sdr = parts[1]
                     gain = parts[2]
 
-                    op25_cmd = f"./rx.py --args '{sdr}' -N 'LNA:{gain}' -S 2500000 -x 2 -T trunk.tsv -U -X -l http:0.0.0.0:8080"
+                    op25_cmd = f"./rx.py --args '{sdr}' -N 'LNA:{gain}' -S 1400000 -x 2 -T trunk.tsv -U -X -l http:0.0.0.0:8080"
 
                     # Kill any existing session
                     kill_session()
@@ -127,7 +127,7 @@ def handle_client(client_socket):
                         site_id = parts[1]
                         system_id = parts[2]
 
-                        op25_cmd = f"./rx.py --args 'rtl-sdr' -N 'LNA:48' -S 2500000 -x 2 -T systems/{system_id}/{system_id}_{site_id}_trunk.tsv -U -X -l http:0.0.0.0:8080"
+                        op25_cmd = f"./rx.py --args 'rtl-sdr' -N 'LNA:48' -S 1400000 -x 2 -T systems/{system_id}/{system_id}_{site_id}_trunk.tsv -U -X -l http:0.0.0.0:8080"
 
                         # Kill any existing session
                         kill_session()
@@ -138,6 +138,29 @@ def handle_client(client_socket):
                         response = "ACK: OP25 started"
                     except:
                         response = "ACK"
+
+
+                elif command.startswith('SITELOCK'):
+                    try:
+                        parts = command.split(';')
+
+                        # Extracted values
+                        system_id = parts[1]
+                        site_id = parts[2]
+
+                        op25_cmd = f"./rx.py --args 'rtl-sdr' -N 'LNA:48' -S 1400000 -x 2 -T systems/{system_id}/{system_id}_{site_id}_trunk.tsv -U -X -l http:0.0.0.0:8080"
+
+                        # Kill any existing session
+                        kill_session()
+
+                        # Run it in a screen session
+                        subprocess.Popen(f"screen -dmS {session_name} {op25_cmd}", shell=True)
+                        print(f"Started OP25 With: {op25_cmd}")
+                        response = "ACK: OP25 started"
+                    except:
+                        response = "ACK"
+
+
 
                 elif command == 'STOP_OP25':
                     # Kill the screen session
