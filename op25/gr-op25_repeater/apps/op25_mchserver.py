@@ -148,7 +148,7 @@ def handle_client(client_socket):
                         system_id = parts[1]
                         site_id = parts[2]
 
-                        op25_cmd = f"./rx.py --args 'rtl-sdr' -N 'LNA:48' -S 1400000 -x 2 -T systems/{system_id}/{system_id}_{site_id}_trunk.tsv -U -X -l http:0.0.0.0:8080"
+                        op25_cmd = f"./rx.py --args 'rtl-sdr' -N 'LNA:48' -S 1400000 -x 2 -T systems/{system_id}/{system_id}_{site_id}_trunk.tsv -U -X -v 9 -l http:0.0.0.0:8080"
 
                         # Kill any existing session
                         kill_session()
@@ -205,6 +205,81 @@ def handle_client(client_socket):
                     except Exception as e:
                         response = f"NACK: Error reading config - {str(e)}"
                         print(response)  # Print for debug purposes
+
+                elif command.startswith('WRITE_SCANMODE'):
+
+                    try:
+                        # Extract the system ID and mode from the command
+                        parts = command.split(';')
+                        system_id = parts[1].split('=')[1].strip()  # Extract system ID
+                        scan_mode = parts[2].split('=')[1].strip()  # Extract scan mode
+
+                        # Define the file path
+                        file_path = f"systems/{system_id}/{system_id}_blacklist.tsv"
+
+                        # Handle the scan mode
+                        if 'system' in scan_mode:
+                            print('system scan')
+                            # Empty the file
+                            with open(file_path, 'w') as file:
+                                file.write('')
+
+                            response = f"ACK: System scan mode for system {system_id}"
+
+                        elif 'grid' in scan_mode:
+                            print('grid scan')
+
+                            # Write "0\t999999" to the file
+                            with open(file_path, 'w') as file:
+                                file.write('0\t99999')
+
+                            response = f"ACK: Grid scan mode for system {system_id}"
+
+                        else:
+
+                            # Handle unexpected scan mode
+
+                            response = f"NACK: Unknown scan mode '{scan_mode}' for system {system_id}"
+
+
+                    except Exception as e:
+
+                        # Handle any exceptions and set a response
+
+                        response = f"NACK: Error updating scan mode - {str(e)}"
+
+
+
+                elif command.startswith('WRITE_WHITELIST'):
+                    try:
+                        # Split the command into parts
+                        parts = command.split(';')
+
+                        # Extract the system ID
+                        system_id = parts[1]
+
+                        # Define the file path
+                        file_path = f"systems/{system_id}/{system_id}_whitelist.tsv"
+
+                        # Extract the whitelist entries
+                        whitelist_entries = parts[2:]
+
+                        # Format the entries as tab-separated values
+                        formatted_entries = [entry.replace(':', '\t') for entry in whitelist_entries]
+
+                        # Write the formatted entries to the whitelist file
+                        with open(file_path, 'w') as file:
+                            for entry in formatted_entries:
+                                file.write(entry + '\n')
+
+                        # Set a success response
+                        response = "ACK - Whitelist updated successfully"
+
+                    except Exception as e:
+                        # Handle any exceptions and set a response
+                        response = f"NACK - {str(e)}"
+
+
 
 
                 elif command.startswith('WRITE_TRUNK'):
